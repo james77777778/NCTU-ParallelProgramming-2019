@@ -19,7 +19,8 @@ make clean
 
 ### Benchamrk
 `num_tosses` = 100000000
-|           | core 1 | core 2 | core 4 |
+
+|type       | core 1 | core 2 | core 4 |
 |-----------|--------|--------|--------|
 |pi_serial  |0.265s  |0.260s  |0.262s  |
 |pi_parallel|0.265s  |0.146s  |0.091s  |
