@@ -5,3 +5,15 @@
 pi_parallel
 pi_serial
 pi
+
+# hw4 exec
+cuda_wave
+serial_wave
+
+# hw5 exec
+histogram
+histogram_serial
+
+# hw5 data
+*.bmp
+*.BMP
