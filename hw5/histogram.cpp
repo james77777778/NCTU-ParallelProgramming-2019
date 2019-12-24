@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <ios>
+#include <time.h>
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
 #else
@@ -26,14 +27,17 @@ typedef struct
     uint32_t height;
     uint32_t weight;
     RGB *data;
-    uint32_t *pixel;
+    uint8_t *pixel;
 } Image;
 
 Image *readbmp(const char *filename)
 {
-    std::ifstream bmp(filename, std::ios::binary);
+    FILE *bmp;
+    bmp = fopen(filename, "rb");
+    // std::ifstream bmp(filename, std::ios::binary);
     char header[54];
-    bmp.read(header, 54);
+    // bmp.read(header, 54);
+    fread(header, sizeof(char), 54, bmp);
     uint32_t size = *(int *)&header[2];
     uint32_t offset = *(int *)&header[10];
     uint32_t w = *(int *)&header[18];
@@ -44,19 +48,17 @@ Image *readbmp(const char *filename)
         printf("we don't suppot depth with %d\n", depth);
         exit(0);
     }
-    bmp.seekg(offset, bmp.beg);
+    fseek(bmp, offset, SEEK_SET);
+    // bmp.seekg(offset, bmp.beg);
 
     Image *ret = new Image();
     ret->type = 1;
     ret->height = h;
     ret->weight = w;
     ret->size = w * h;
-    ret->pixel = new uint32_t[w * h * 3]{};
-    for (int i = 0; i < ret->size*3; i++)
-    {
-        // bmp.read((char *)&ret->data[i], depth / 8);
-        bmp.read((char *)&ret->pixel[i], 1);
-    }
+    ret->pixel = new uint8_t[w * h * 3]{};
+    fread(ret->pixel, sizeof(uint8_t), ret->size*3, bmp);
+    fclose(bmp);
     return ret;
 }
 
@@ -104,11 +106,11 @@ int writebmp(const char *filename, Image *img)
     header[24] = (height >> 16) & 0x000000ff;
     header[25] = (height >> 24) & 0x000000ff;
 
-    std::ofstream fout;
-    fout.open(filename, std::ios::binary);
-    fout.write((char *)header, 54);
-    fout.write((char *)img->data, img->size * 4);
-    fout.close();
+    FILE *fout;
+    fout = fopen(filename, "wb");
+    fwrite(header, sizeof(char), 54, fout);
+    fwrite(img->data, sizeof(char), img->size * 4, fout);
+    fclose(fout);
 }
 
 cl_program load_program(cl_context context, const char* filename)
@@ -184,17 +186,17 @@ int main(int argc, char *argv[])
             std::cout << img->weight << ":" << img->height << "\n";
 
             int data_size = img->weight*img->height;
-            cl_mem cl_pixel = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(unsigned int) * data_size * 3, NULL, NULL);
-            clEnqueueWriteBuffer(que, cl_pixel, CL_FALSE, 0, sizeof(unsigned int) * data_size * 3, img->pixel, 0, NULL, NULL);
+            cl_mem cl_pixel = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(uint8_t) * data_size * 3, NULL, NULL);
+            clEnqueueWriteBuffer(que, cl_pixel, CL_FALSE, 0, sizeof(uint8_t) * data_size * 3, img->pixel, 0, NULL, NULL);
             std::fill(R, R+256, 0);
             std::fill(G, G+256, 0);
             std::fill(B, B+256, 0);
-            cl_mem cl_R = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, sizeof(unsigned int) * 256, NULL, NULL);
-            cl_mem cl_G = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, sizeof(unsigned int) * 256, NULL, NULL);
-            cl_mem cl_B = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, sizeof(unsigned int) * 256, NULL, NULL);
-            clEnqueueWriteBuffer(que, cl_R, CL_FALSE, 0, sizeof(unsigned int) * 256, R, 0, NULL, NULL);
-            clEnqueueWriteBuffer(que, cl_G, CL_FALSE, 0, sizeof(unsigned int) * 256, G, 0, NULL, NULL);
-            clEnqueueWriteBuffer(que, cl_B, CL_FALSE, 0, sizeof(unsigned int) * 256, B, 0, NULL, NULL);
+            cl_mem cl_R = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, sizeof(uint32_t) * 256, NULL, NULL);
+            cl_mem cl_G = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, sizeof(uint32_t) * 256, NULL, NULL);
+            cl_mem cl_B = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY, sizeof(uint32_t) * 256, NULL, NULL);
+            clEnqueueWriteBuffer(que, cl_R, CL_FALSE, 0, sizeof(uint32_t) * 256, R, 0, NULL, NULL);
+            clEnqueueWriteBuffer(que, cl_G, CL_FALSE, 0, sizeof(uint32_t) * 256, G, 0, NULL, NULL);
+            clEnqueueWriteBuffer(que, cl_B, CL_FALSE, 0, sizeof(uint32_t) * 256, B, 0, NULL, NULL);
             clFlush(que);
             clFinish(que);
             clSetKernelArg(histogram, 0, sizeof(cl_mem), &cl_pixel);
@@ -206,9 +208,9 @@ int main(int argc, char *argv[])
             cl_int err = clEnqueueNDRangeKernel(que, histogram, 1, 0, &work_size, 0, 0, 0, 0);
 
             if(err == CL_SUCCESS) {
-                err = clEnqueueReadBuffer(que, cl_R, CL_FALSE, 0, sizeof(unsigned int) * 256, R, 0, 0, 0);
-                err = clEnqueueReadBuffer(que, cl_G, CL_FALSE, 0, sizeof(unsigned int) * 256, G, 0, 0, 0);
-                err = clEnqueueReadBuffer(que, cl_B, CL_FALSE, 0, sizeof(unsigned int) * 256, B, 0, 0, 0);
+                err = clEnqueueReadBuffer(que, cl_R, CL_FALSE, 0, sizeof(uint32_t) * 256, R, 0, 0, 0);
+                err = clEnqueueReadBuffer(que, cl_G, CL_FALSE, 0, sizeof(uint32_t) * 256, G, 0, 0, 0);
+                err = clEnqueueReadBuffer(que, cl_B, CL_FALSE, 0, sizeof(uint32_t) * 256, B, 0, 0, 0);
                 clFlush(que);
                 clFinish(que);
             }
@@ -221,7 +223,6 @@ int main(int argc, char *argv[])
             else {
                 std::cerr << "Can't read back data: " << err << "\n";
             }
-
             int max = 0;
             for(int i=0;i<256;i++){
                 max = R[i] > max ? R[i] : max;
@@ -246,7 +247,6 @@ int main(int argc, char *argv[])
                         ret->data[256*i+j].B = 255;
                 }
             }
-
             std::string newfile = "hist_" + std::string(filename); 
             writebmp(newfile.c_str(), ret);
         }
