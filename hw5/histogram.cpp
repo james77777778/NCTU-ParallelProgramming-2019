@@ -26,6 +26,7 @@ typedef struct
     uint32_t size;
     uint32_t height;
     uint32_t weight;
+    uint32_t depth;
     RGB *data;
     uint8_t *pixel;
 } Image;
@@ -34,9 +35,7 @@ Image *readbmp(const char *filename)
 {
     FILE *bmp;
     bmp = fopen(filename, "rb");
-    // std::ifstream bmp(filename, std::ios::binary);
     char header[54];
-    // bmp.read(header, 54);
     fread(header, sizeof(char), 54, bmp);
     uint32_t size = *(int *)&header[2];
     uint32_t offset = *(int *)&header[10];
@@ -49,15 +48,20 @@ Image *readbmp(const char *filename)
         exit(0);
     }
     fseek(bmp, offset, SEEK_SET);
-    // bmp.seekg(offset, bmp.beg);
-
     Image *ret = new Image();
     ret->type = 1;
     ret->height = h;
     ret->weight = w;
     ret->size = w * h;
-    ret->pixel = new uint8_t[w * h * 3]{};
-    fread(ret->pixel, sizeof(uint8_t), ret->size*3, bmp);
+    ret->depth = depth;
+    if (depth == 32) {
+        ret->pixel = new uint8_t[w * h * 4]{};
+        fread(ret->pixel, sizeof(uint8_t), ret->size*4, bmp);
+    }
+    else if (depth == 24) {
+        ret->pixel = new uint8_t[w * h * 3]{};
+        fread(ret->pixel, sizeof(uint8_t), ret->size*3, bmp);
+    }
     fclose(bmp);
     return ret;
 }
@@ -186,8 +190,16 @@ int main(int argc, char *argv[])
             std::cout << img->weight << ":" << img->height << "\n";
 
             int data_size = img->weight*img->height;
-            cl_mem cl_pixel = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(uint8_t) * data_size * 3, NULL, NULL);
-            clEnqueueWriteBuffer(que, cl_pixel, CL_FALSE, 0, sizeof(uint8_t) * data_size * 3, img->pixel, 0, NULL, NULL);
+            size_t work_size = 0;
+            if (img->depth == 24) {
+                work_size = data_size*3;
+            }
+            else if (img->depth == 32) {
+                work_size = data_size*4;
+            }
+            int stride = img->depth/8;
+            cl_mem cl_pixel = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(uint8_t) * work_size, NULL, NULL);
+            clEnqueueWriteBuffer(que, cl_pixel, CL_FALSE, 0, sizeof(uint8_t) * work_size, img->pixel, 0, NULL, NULL);
             std::fill(R, R+256, 0);
             std::fill(G, G+256, 0);
             std::fill(B, B+256, 0);
@@ -203,10 +215,8 @@ int main(int argc, char *argv[])
             clSetKernelArg(histogram, 1, sizeof(cl_mem), &cl_R);
             clSetKernelArg(histogram, 2, sizeof(cl_mem), &cl_G);
             clSetKernelArg(histogram, 3, sizeof(cl_mem), &cl_B);
-
-            size_t work_size = data_size*3;
+            clSetKernelArg(histogram, 4, sizeof(int), &stride);
             cl_int err = clEnqueueNDRangeKernel(que, histogram, 1, 0, &work_size, 0, 0, 0, 0);
-
             if(err == CL_SUCCESS) {
                 err = clEnqueueReadBuffer(que, cl_R, CL_FALSE, 0, sizeof(uint32_t) * 256, R, 0, 0, 0);
                 err = clEnqueueReadBuffer(que, cl_G, CL_FALSE, 0, sizeof(uint32_t) * 256, G, 0, 0, 0);
